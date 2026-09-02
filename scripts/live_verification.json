@@ -1,0 +1,16 @@
+{
+  "status": "ACCEPTED",
+  "market": {
+    "id": "market-1",
+    "phase": "COMMIT",
+    "min_evidence": 2,
+    "outcomes": [
+      "YES",
+      "NO"
+    ]
+  },
+  "stats": {
+    "forecasts": 0,
+    "markets": 1
+  }
+}
