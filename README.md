@@ -42,8 +42,9 @@ Tests cover malformed markets, duplicate wallets, sealed-state privacy, commitme
 
 - Live interface: [forecast-forge-5wy.pages.dev](https://forecast-forge-5wy.pages.dev/)
 - Network: GenLayer StudioNet (`61999`)
-- Contract: [`0x92993B6F786BdE15e62DFD3669f2822A45B3d11f`](https://explorer-studio.genlayer.com/address/0x92993B6F786BdE15e62DFD3669f2822A45B3d11f)
-- Deployment transaction: [`0xcf7e075feb378e15c86ccf8dec5f70215ffd9924795b89bced144121c3df4b68`](https://explorer-studio.genlayer.com/tx/0xcf7e075feb378e15c86ccf8dec5f70215ffd9924795b89bced144121c3df4b68)
+- Contract: [`0x89933004dAbBa1C5080838485aeFd0651AC9327C`](https://explorer-studio.genlayer.com/address/0x89933004dAbBa1C5080838485aeFd0651AC9327C)
+- Deployment transaction: [`0xff1a17c4e06e576c94146da591c88f00a5f323eb482e6b167f9cb6cabe3999e3`](https://explorer-studio.genlayer.com/tx/0xff1a17c4e06e576c94146da591c88f00a5f323eb482e6b167f9cb6cabe3999e3)
+- Live market transaction: [`0x6ae2090d3b1f3d4caa735fc9403b6d834aa9aa21408d165b689926157c902007`](https://explorer-studio.genlayer.com/tx/0x6ae2090d3b1f3d4caa735fc9403b6d834aa9aa21408d165b689926157c902007)
 
 ## Interface
 

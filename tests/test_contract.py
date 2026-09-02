@@ -10,14 +10,16 @@ def test_market_validation_and_one_commit_per_wallet(direct_vm,direct_deploy,dir
  mid=make(c,direct_vm,direct_alice);direct_vm.sender=direct_bob;c.commit_forecast(mid,digest(mid,"YES",80,"n"))
  with direct_vm.expect_revert("already committed"):c.commit_forecast(mid,"a"*64)
 def test_sealed_reveal_and_snapshot_guards(direct_vm,direct_deploy,direct_alice,direct_bob):
- c=direct_deploy(CONTRACT);mid=make(c,direct_vm,direct_alice);direct_vm.sender=direct_bob;fid=c.commit_forecast(mid,digest(mid,"YES",80,"n"));assert c.get_forecast(fid)["outcome"]=="";direct_vm.sender=direct_alice;c.open_reveal(mid);direct_vm.sender=direct_bob
+ c=direct_deploy(CONTRACT);mid=make(c,direct_vm,direct_alice);direct_vm.sender=direct_bob;fid=c.commit_forecast(mid,digest(mid,"YES",80,"n"));assert c.get_forecast(fid)["outcome"]=="";direct_vm.warp("2026-09-04T12:00:00Z");direct_vm.sender=direct_alice;c.open_reveal(mid);direct_vm.sender=direct_bob
  with direct_vm.expect_revert("does not match"):c.reveal_forecast(fid,"NO",80,"n")
- c.reveal_forecast(fid,"YES",80,"n");direct_vm.sender=direct_alice;c.open_evidence(mid)
+ c.reveal_forecast(fid,"YES",80,"n");direct_vm.warp("2026-09-06T12:00:00Z");direct_vm.sender=direct_alice;c.open_evidence(mid)
  with direct_vm.expect_revert("SHA-256 snapshot"):c.submit_evidence(mid,"http://bad.example","","x","today")
  evidence(c,direct_vm,mid);assert len(c.get_market(mid)["evidence"])==2
 def test_consensus_finalize_and_portable_accuracy(direct_vm,direct_deploy,direct_alice,direct_bob):
- c=direct_deploy(CONTRACT);mid=make(c,direct_vm,direct_alice);direct_vm.sender=direct_bob;fid=c.commit_forecast(mid,digest(mid,"YES",85,"x"));direct_vm.sender=direct_alice;c.open_reveal(mid);direct_vm.sender=direct_bob;c.reveal_forecast(fid,"YES",85,"x");direct_vm.sender=direct_alice;c.open_evidence(mid);evidence(c,direct_vm,mid);result(direct_vm);r=c.resolve_market(mid);direct_vm.clear_mocks();assert r["outcome"]=="YES";c.finalize_market(mid);p=c.get_profile(direct_bob);assert p["accuracy"]==100 and p["correct"]==1
+ c=direct_deploy(CONTRACT);mid=make(c,direct_vm,direct_alice);direct_vm.sender=direct_bob;fid=c.commit_forecast(mid,digest(mid,"YES",85,"x"));direct_vm.warp("2026-09-04T12:00:00Z");direct_vm.sender=direct_alice;c.open_reveal(mid);direct_vm.sender=direct_bob;c.reveal_forecast(fid,"YES",85,"x");direct_vm.warp("2026-09-06T12:00:00Z");direct_vm.sender=direct_alice;c.open_evidence(mid);evidence(c,direct_vm,mid);direct_vm.warp("2026-09-08T12:00:00Z");result(direct_vm);r=c.resolve_market(mid);direct_vm.clear_mocks();assert r["outcome"]=="YES"
+ with direct_vm.expect_revert("before appeal deadline"):c.finalize_market(mid)
+ direct_vm.warp("2026-09-11T12:00:00Z");c.finalize_market(mid);p=c.get_profile(direct_bob);assert p["accuracy"]==100 and p["correct"]==1
 def test_unresolved_is_neutral_and_single_appeal(direct_vm,direct_deploy,direct_alice,direct_bob):
- c=direct_deploy(CONTRACT);mid=make(c,direct_vm,direct_alice);direct_vm.sender=direct_bob;fid=c.commit_forecast(mid,digest(mid,"NO",60,"x"));direct_vm.sender=direct_alice;c.open_reveal(mid);direct_vm.sender=direct_bob;c.reveal_forecast(fid,"NO",60,"x");direct_vm.sender=direct_alice;c.open_evidence(mid);evidence(c,direct_vm,mid);result(direct_vm,"UNRESOLVED",35);c.resolve_market(mid);c.appeal_resolution(mid,"New archived evidence was submitted for reconsideration.");direct_vm.clear_mocks()
- with direct_vm.expect_revert("Appeal unavailable"):c.appeal_resolution(mid,"Try the same appeal a second time with no new rights.")
- c.finalize_market(mid);assert c.get_profile(direct_bob)["resolved"]==0
+ c=direct_deploy(CONTRACT);mid=make(c,direct_vm,direct_alice);direct_vm.sender=direct_bob;fid=c.commit_forecast(mid,digest(mid,"NO",60,"x"));direct_vm.warp("2026-09-04T12:00:00Z");direct_vm.sender=direct_alice;c.open_reveal(mid);direct_vm.sender=direct_bob;c.reveal_forecast(fid,"NO",60,"x");direct_vm.warp("2026-09-06T12:00:00Z");direct_vm.sender=direct_alice;c.open_evidence(mid);evidence(c,direct_vm,mid);direct_vm.warp("2026-09-08T12:00:00Z");result(direct_vm,"UNRESOLVED",35);c.resolve_market(mid);c.submit_evidence(mid,"https://appeal.example/new","","c"*64,"2026-09-08T13:00:00Z");c.appeal_resolution(mid,"New archived evidence was submitted for reconsideration.");direct_vm.clear_mocks()
+ with direct_vm.expect_revert("Appeal needs new evidence"):c.appeal_resolution(mid,"Try the same appeal a second time with no new rights.")
+ direct_vm.warp("2026-09-11T12:00:00Z");c.finalize_market(mid);assert c.get_profile(direct_bob)["resolved"]==0

@@ -1,8 +1,10 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 from genlayer import *
 import hashlib, json
+from datetime import datetime, timezone
 
 PAGE, TOLERANCE = 20, 10
+COMMIT_SECONDS, REVEAL_SECONDS, EVIDENCE_SECONDS, APPEAL_SECONDS = 86400, 86400, 86400, 172800
 ERR_EXPECTED, ERR_LLM = "[EXPECTED]", "[LLM_ERROR]"
 
 def _clean(value, limit): return " ".join(str(value).strip().split())[:limit]
@@ -68,7 +70,7 @@ class ForecastForge(gl.Contract):
         if len(question)<15 or len(criteria)<60 or len(outcomes)<2 or len(set(outcomes))!=len(outcomes): raise gl.vm.UserError(ERR_EXPECTED+" Market needs a clear question, unique outcomes, and exact criteria")
         minimum=int(min_evidence)
         if minimum<2 or minimum>5: raise gl.vm.UserError(ERR_EXPECTED+" Evidence minimum must be 2-5")
-        self.market_seq+=u256(1);mid="market-"+str(int(self.market_seq));record={"id":mid,"creator":gl.message.sender_address.as_hex,"question":question,"outcomes":outcomes,"criteria":criteria,"min_evidence":minimum,"phase":"COMMIT","forecast_ids":[],"evidence":[],"resolution":{},"appealed":False,"final":False}
+        now=int(datetime.now(timezone.utc).timestamp());self.market_seq+=u256(1);mid="market-"+str(int(self.market_seq));record={"id":mid,"creator":gl.message.sender_address.as_hex,"question":question,"outcomes":outcomes,"criteria":criteria,"min_evidence":minimum,"phase":"COMMIT","phase_deadline":now+COMMIT_SECONDS,"forecast_ids":[],"evidence":[],"resolution":{},"resolution_evidence_count":0,"appealed":False,"final":False}
         self.markets[mid]=json.dumps(record);self.market_ids.append(mid);return mid
     @gl.public.write
     def commit_forecast(self,market_id:str,commitment:str)->str:
@@ -81,9 +83,10 @@ class ForecastForge(gl.Contract):
     @gl.public.write
     def open_reveal(self,market_id:str)->None:
         market=self._market(market_id)
-        if market["creator"].lower()!=gl.message.sender_address.as_hex.lower() or market["phase"]!="COMMIT":raise gl.vm.UserError(ERR_EXPECTED+" Cannot open reveal")
+        now=int(datetime.now(timezone.utc).timestamp())
+        if market["creator"].lower()!=gl.message.sender_address.as_hex.lower() or market["phase"]!="COMMIT" or now<market["phase_deadline"]:raise gl.vm.UserError(ERR_EXPECTED+" Cannot open reveal before commit deadline")
         if not market["forecast_ids"]:raise gl.vm.UserError(ERR_EXPECTED+" No forecasts committed")
-        market["phase"]="REVEAL";self.markets[market_id]=json.dumps(market)
+        market["phase"],market["phase_deadline"]="REVEAL",now+REVEAL_SECONDS;self.markets[market_id]=json.dumps(market)
     @gl.public.write
     def reveal_forecast(self,forecast_id:str,outcome:str,confidence:u256,nonce:str)->None:
         forecast=self._forecast(forecast_id);market=self._market(forecast["market"]);outcome=_clean(outcome,80);nonce=_clean(nonce,120);value=int(confidence)
@@ -95,8 +98,9 @@ class ForecastForge(gl.Contract):
     @gl.public.write
     def open_evidence(self,market_id:str)->None:
         market=self._market(market_id)
-        if market["creator"].lower()!=gl.message.sender_address.as_hex.lower() or market["phase"]!="REVEAL":raise gl.vm.UserError(ERR_EXPECTED+" Cannot open evidence")
-        market["phase"]="EVIDENCE";self.markets[market_id]=json.dumps(market)
+        now=int(datetime.now(timezone.utc).timestamp())
+        if market["creator"].lower()!=gl.message.sender_address.as_hex.lower() or market["phase"]!="REVEAL" or now<market["phase_deadline"]:raise gl.vm.UserError(ERR_EXPECTED+" Cannot open evidence before reveal deadline")
+        market["phase"],market["phase_deadline"]="EVIDENCE",now+EVIDENCE_SECONDS;self.markets[market_id]=json.dumps(market)
     @gl.public.write
     def submit_evidence(self,market_id:str,url:str,archive_url:str,content_hash:str,retrieved_at:str)->None:
         market=self._market(market_id);url,archive_url,content_hash,retrieved_at=_clean(url,320),_clean(archive_url,320),_clean(content_hash,64).lower(),_clean(retrieved_at,40)
@@ -119,17 +123,20 @@ class ForecastForge(gl.Contract):
     @gl.public.write
     def resolve_market(self,market_id:str)->dict:
         market=self._market(market_id)
-        if market["phase"]!="EVIDENCE" or len(market["evidence"])<market["min_evidence"]:raise gl.vm.UserError(ERR_EXPECTED+" Market needs enough independent evidence")
-        result=self._resolve(market);market["resolution"],market["phase"]=result,"APPEAL";self.markets[market_id]=json.dumps(market);return result
+        now=int(datetime.now(timezone.utc).timestamp())
+        if market["phase"]!="EVIDENCE" or now<market["phase_deadline"] or len(market["evidence"])<market["min_evidence"]:raise gl.vm.UserError(ERR_EXPECTED+" Market needs elapsed evidence window and enough independent evidence")
+        result=self._resolve(market);market["resolution"],market["phase"],market["phase_deadline"],market["resolution_evidence_count"]=result,"APPEAL",now+APPEAL_SECONDS,len(market["evidence"]);self.markets[market_id]=json.dumps(market);return result
     @gl.public.write
     def appeal_resolution(self,market_id:str,reason:str)->dict:
         market=self._market(market_id)
-        if market["phase"]!="APPEAL" or market["appealed"] or len(_clean(reason,500))<20:raise gl.vm.UserError(ERR_EXPECTED+" Appeal unavailable or incomplete")
+        now=int(datetime.now(timezone.utc).timestamp())
+        if market["phase"]!="APPEAL" or now>=market["phase_deadline"] or market["appealed"] or len(market["evidence"])<=market["resolution_evidence_count"] or len(_clean(reason,500))<20:raise gl.vm.UserError(ERR_EXPECTED+" Appeal needs new evidence and an open window")
         market["appealed"]=True;result=self._resolve(market);market["resolution"]=result;self.markets[market_id]=json.dumps(market);return result
     @gl.public.write
     def finalize_market(self,market_id:str)->dict:
         market=self._market(market_id)
-        if market["creator"].lower()!=gl.message.sender_address.as_hex.lower() or market["phase"]!="APPEAL":raise gl.vm.UserError(ERR_EXPECTED+" Cannot finalize")
+        now=int(datetime.now(timezone.utc).timestamp())
+        if market["creator"].lower()!=gl.message.sender_address.as_hex.lower() or market["phase"]!="APPEAL" or now<market["phase_deadline"]:raise gl.vm.UserError(ERR_EXPECTED+" Cannot finalize before appeal deadline")
         market["phase"],market["final"]="FINAL",True;self.markets[market_id]=json.dumps(market);self._apply_scores(market);return market["resolution"]
     @gl.public.view
     def get_market(self,market_id:str)->dict:return self._market(market_id)
